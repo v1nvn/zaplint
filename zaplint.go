@@ -36,7 +36,14 @@ type Options struct {
 // New creates a new zaplint analyzer.
 func New(opts *Options) *analysis.Analyzer {
 	if opts == nil {
-		opts = &Options{}
+		opts = &Options{
+			NoGlobal:       true,
+			NoSugar:        true,
+			StaticMsg:      true,
+			MsgStyle:       styleLowercased,
+			KeyNamingCase:  snakeCase,
+			ArgsOnSepLines: true,
+		}
 	}
 	return &analysis.Analyzer{
 		Name:     "zaplint",
