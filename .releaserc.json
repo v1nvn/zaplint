@@ -1,0 +1,34 @@
+{
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          {
+            "path": "dist/zaplint-linux-amd64",
+            "label": "Linux AMD64"
+          },
+          {
+            "path": "dist/zaplint-linux-arm64",
+            "label": "Linux ARM64"
+          },
+          {
+            "path": "dist/zaplint-darwin-amd64",
+            "label": "macOS AMD64"
+          },
+          {
+            "path": "dist/zaplint-darwin-arm64",
+            "label": "macOS ARM64"
+          },
+          {
+            "path": "dist/zaplint-windows-amd64.exe",
+            "label": "Windows AMD64"
+          }
+        ]
+      }
+    ]
+  ]
+}
