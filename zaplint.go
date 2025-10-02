@@ -334,20 +334,44 @@ func checkMsgStyle(pass *analysis.Pass, msg ast.Expr, style string) {
 	if err != nil || value == "" {
 		return
 	}
-	firstRune := []rune(value)[0]
+	runes := []rune(value)
+	firstRune := runes[0]
 	isValid := false
+	var fixedValue string
 	switch style {
 	case styleLowercased:
 		if unicode.IsLower(firstRune) || !unicode.IsLetter(firstRune) {
 			isValid = true
+		} else {
+			// Handle abbreviations: if multiple consecutive uppercase letters, lowercase them all
+			i := 0
+			for i < len(runes) && unicode.IsUpper(runes[i]) {
+				runes[i] = unicode.ToLower(runes[i])
+				i++
+			}
+			fixedValue = string(runes)
 		}
 	case styleCapitalized:
 		if unicode.IsUpper(firstRune) || !unicode.IsLetter(firstRune) {
 			isValid = true
+		} else {
+			runes[0] = unicode.ToUpper(firstRune)
+			fixedValue = string(runes)
 		}
 	}
 	if !isValid {
-		pass.Reportf(msg.Pos(), "message should be %s", style)
+		pass.Report(analysis.Diagnostic{
+			Pos:     msg.Pos(),
+			Message: fmt.Sprintf("message should be %s", style),
+			SuggestedFixes: []analysis.SuggestedFix{{
+				Message: fmt.Sprintf("Change to %q", fixedValue),
+				TextEdits: []analysis.TextEdit{{
+					Pos:     msg.Pos(),
+					End:     msg.End(),
+					NewText: []byte(strconv.Quote(fixedValue)),
+				}},
+			}},
+		})
 	}
 }
 
