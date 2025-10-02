@@ -23,28 +23,25 @@ import (
 
 // Options are options for the zaplint analyzer.
 type Options struct {
-	NoGlobal       bool     // Enforce not using global loggers.
-	NoSugar        bool     // Enforce not using the sugared logger.
-	StaticMsg      bool     // Enforce using static messages.
-	MsgStyle       string   // Enforce message style ("lowercased" or "capitalized").
-	NoRawKeys      bool     // Enforce using constants instead of raw keys.
-	KeyNamingCase  string   // Enforce key naming convention ("snake", "kebab", "camel", or "pascal").
-	ForbiddenKeys  []string // Enforce not using specific keys.
-	ArgsOnSepLines bool     // Enforce putting arguments on separate lines.
+	AllowGlobal    bool     `json:"allow-global"`      // Allow using global loggers (zap.L() and zap.S()). Default: false (disallowed).
+	AllowSugar     bool     `json:"allow-sugar"`       // Allow using the sugared logger. Default: false (disallowed).
+	AllowDynamicMsg bool    `json:"allow-dynamic-msg"` // Allow dynamic log messages. Default: false (disallowed).
+	MsgStyle       string   `json:"msg-style"`         // Enforce message style ("lowercased" or "capitalized"). Default: "lowercased".
+	AllowRawKeys   bool     `json:"allow-raw-keys"`    // Allow using raw string keys instead of constants. Default: false (disallowed).
+	KeyNamingCase  string   `json:"key-naming-case"`   // Enforce key naming convention ("snake", "kebab", "camel", or "pascal"). Default: "snake".
+	ForbiddenKeys  []string `json:"forbidden-keys"`    // Enforce not using specific keys. Default: [].
+	AllowArgsOnSameLine bool `json:"allow-args-on-same-line"` // Allow putting arguments on the same line. Default: false (disallowed).
 }
 
 // New creates a new zaplint analyzer.
 func New(opts *Options) *analysis.Analyzer {
 	if opts == nil {
-		opts = &Options{
-			NoGlobal:       true,
-			NoSugar:        true,
-			StaticMsg:      true,
-			MsgStyle:       styleLowercased,
-			KeyNamingCase:  snakeCase,
-			ArgsOnSepLines: true,
-		}
+		opts = &Options{}
 	}
+
+	// Apply defaults for string fields
+	applyDefaults(opts)
+
 	return &analysis.Analyzer{
 		Name:     "zaplint",
 		Doc:      "ensure consistent code style when using go.uber.org/zap",
@@ -57,6 +54,21 @@ func New(opts *Options) *analysis.Analyzer {
 			run(pass, opts)
 			return nil, nil
 		},
+	}
+}
+
+// applyDefaults applies default values for string fields.
+// Boolean fields use zero value (false) as the default, which means "disallow" for all checks.
+// This is the single source of truth for default values.
+func applyDefaults(opts *Options) {
+	// MsgStyle defaults to "lowercased"
+	if opts.MsgStyle == "" {
+		opts.MsgStyle = styleLowercased
+	}
+
+	// KeyNamingCase defaults to "snake"
+	if opts.KeyNamingCase == "" {
+		opts.KeyNamingCase = snakeCase
 	}
 }
 
@@ -154,13 +166,13 @@ func visit(pass *analysis.Pass, call *ast.CallExpr, opts *Options) {
 		reportPos = sel.Sel.Pos()
 	}
 
-	if opts.NoGlobal {
+	if !opts.AllowGlobal {
 		if cleanedFullName == "go.uber.org/zap.L" || cleanedFullName == "go.uber.org/zap.S" {
 			pass.Reportf(reportPos, "global logger should not be used")
 			return
 		}
 	}
-	if opts.NoSugar && info.IsSugar {
+	if !opts.AllowSugar && info.IsSugar {
 		// For chained calls like sugar.With().Info(), only report on the inner call (.With)
 		// to avoid duplicate diagnostics. Skip if the receiver is a sugared logger call.
 		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
@@ -181,7 +193,7 @@ func visit(pass *analysis.Pass, call *ast.CallExpr, opts *Options) {
 
 	logArgs := call.Args[info.ArgsStart:]
 
-	if opts.StaticMsg && info.HasMsg && len(call.Args) > info.MsgPos {
+	if !opts.AllowDynamicMsg && info.HasMsg && len(call.Args) > info.MsgPos {
 		msgArg := call.Args[info.MsgPos]
 		if !isStaticMsg(pass.TypesInfo, msgArg) {
 			pass.Reportf(msgArg.Pos(), "message should be a string literal or a constant")
@@ -195,7 +207,7 @@ func visit(pass *analysis.Pass, call *ast.CallExpr, opts *Options) {
 	keys := allKeys(pass, fn.Name(), info, logArgs)
 	checkAllKeys(pass, opts, keys)
 
-	if opts.ArgsOnSepLines && areArgsOnSameLine(pass.Fset, info.IsW, logArgs) {
+	if !opts.AllowArgsOnSameLine && areArgsOnSameLine(pass.Fset, info.IsW, logArgs) {
 		pass.Reportf(call.Pos(), "arguments should be put on separate lines")
 	}
 }
@@ -289,13 +301,13 @@ func validateOptions(opts *Options) error {
 
 func flags(opts *Options) *flag.FlagSet {
 	fset := flag.NewFlagSet("zaplint", flag.ContinueOnError)
-	fset.BoolVar(&opts.NoGlobal, "no-global", opts.NoGlobal, "enforce not using global loggers (zap.L() and zap.S())")
-	fset.BoolVar(&opts.NoSugar, "no-sugar", opts.NoSugar, "enforce using zap.Logger over zap.SugaredLogger")
-	fset.BoolVar(&opts.StaticMsg, "static-msg", opts.StaticMsg, "enforce using static messages")
+	fset.BoolVar(&opts.AllowGlobal, "allow-global", opts.AllowGlobal, "allow using global loggers (zap.L() and zap.S())")
+	fset.BoolVar(&opts.AllowSugar, "allow-sugar", opts.AllowSugar, "allow using the sugared logger")
+	fset.BoolVar(&opts.AllowDynamicMsg, "allow-dynamic-msg", opts.AllowDynamicMsg, "allow dynamic log messages")
 	fset.StringVar(&opts.MsgStyle, "msg-style", opts.MsgStyle, "enforce message style (lowercased|capitalized)")
-	fset.BoolVar(&opts.NoRawKeys, "no-raw-keys", opts.NoRawKeys, "enforce using constants instead of raw keys")
+	fset.BoolVar(&opts.AllowRawKeys, "allow-raw-keys", opts.AllowRawKeys, "allow using raw string keys")
 	fset.StringVar(&opts.KeyNamingCase, "key-naming-case", opts.KeyNamingCase, "enforce key naming convention (snake|kebab|camel|pascal)")
-	fset.BoolVar(&opts.ArgsOnSepLines, "args-on-sep-lines", opts.ArgsOnSepLines, "enforce putting arguments on separate lines")
+	fset.BoolVar(&opts.AllowArgsOnSameLine, "allow-args-on-same-line", opts.AllowArgsOnSameLine, "allow putting arguments on the same line")
 	fset.Func("forbidden-keys", "comma-separated list of forbidden keys", func(s string) error {
 		if s != "" {
 			opts.ForbiddenKeys = append(opts.ForbiddenKeys, strings.Split(s, ",")...)
@@ -379,7 +391,7 @@ func checkAllKeys(pass *analysis.Pass, opts *Options, keys iter.Seq[ast.Expr]) {
 	caseFn, caseName := getCaseConverter(opts.KeyNamingCase)
 	for keyExpr := range keys {
 		// keyRender := render(pass.Fset, keyExpr)
-		if opts.NoRawKeys {
+		if !opts.AllowRawKeys {
 			if _, ok := keyExpr.(*ast.BasicLit); ok {
 				pass.Reportf(keyExpr.Pos(), "raw keys should not be used")
 			}

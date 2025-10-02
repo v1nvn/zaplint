@@ -1,4 +1,4 @@
-package static_msg
+package allow_dynamic_msg
 
 import (
 	"fmt"
@@ -13,6 +13,6 @@ var varMsg = "variable message"
 func tests(logger *zap.Logger) {
 	logger.Info(constMsg)                      // OK
 	logger.Info("static message")              // OK
-	logger.Info(varMsg)                        // want `message should be a string literal or a constant`
-	logger.Info(fmt.Sprintf("dynamic: %d", 1)) // want `message should be a string literal or a constant`
+	logger.Info(varMsg)                        // OK
+	logger.Info(fmt.Sprintf("dynamic: %d", 1)) // OK
 }

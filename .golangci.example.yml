@@ -1,0 +1,24 @@
+# Example golangci-lint configuration using zaplint as a custom linter
+# Requires golangci-lint v2.4.0+
+# Copy this to .golangci.yml and customize as needed
+
+linters-settings:
+  custom:
+    zaplint:
+      type: "module"
+      description: Ensure consistent code style when using go.uber.org/zap
+      # All checks are enabled by default (zero values)
+      # Uncomment and customize settings as needed:
+      # settings:
+      #   allow-global: false       # Disallow global loggers (default)
+      #   allow-sugar: false        # Disallow sugared logger (default)
+      #   allow-dynamic-msg: false  # Disallow dynamic messages (default)
+      #   msg-style: "lowercased"   # Enforce lowercased messages (default)
+      #   allow-raw-keys: false     # Disallow raw keys (default)
+      #   key-naming-case: "snake"  # Enforce snake_case keys (default)
+      #   forbidden-keys: []        # No forbidden keys (default)
+      #   allow-args-on-same-line: false  # Disallow args on same line (default)
+
+linters:
+  enable:
+    - zaplint

@@ -1,4 +1,4 @@
-package args_on_sep_lines
+package no_args_on_sep_lines
 
 import "go.uber.org/zap"
 

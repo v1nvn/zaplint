@@ -8,22 +8,45 @@ The `go.uber.org/zap` library provides both structured logging through `zap.Logg
 
 ## 🚀 Features
 
-* Enforce not using global loggers (enabled by default)
-* Enforce not using the sugared logger (enabled by default)
-* Enforce using static messages (enabled by default)
+* Disallow using global loggers (enabled by default)
+* Disallow using the sugared logger (enabled by default)
+* Disallow dynamic log messages (enabled by default)
 * Enforce message style - lowercased (enabled by default)
-* Enforce using constants instead of raw keys (optional)
+* Disallow using raw string keys (enabled by default)
 * Enforce key naming convention - snake (enabled by default)
-* Enforce not using specific keys (optional)
-* Enforce putting arguments on separate lines (enabled by default)
+* Disallow specific keys (optional)
+* Disallow putting arguments on the same line (enabled by default)
 
 ## 📦 Install
 
-### golangci-lint integration (coming soon)
+### golangci-lint integration
 
-`zaplint` integration into [`golangci-lint`][1] is coming soon. Once available, you will be able to enable it by adding the following lines to `.golangci.yml`:
+`zaplint` can be used as a custom linter in [`golangci-lint`][1] v2.4.0+. See [GOLANGCI_PLUGIN.md](GOLANGCI_PLUGIN.md) for detailed setup instructions.
+
+Quick setup:
+
+```bash
+go get github.com/v1nvn/zaplint@latest
+```
+
+Add to your `.golangci.yml`:
 
 ```yaml
+linters-settings:
+  custom:
+    zaplint:
+      type: "module"
+      description: Ensure consistent code style when using go.uber.org/zap
+      # All settings are optional - defaults shown below
+      # settings:
+      #   allow-global: false       # Disallow global loggers (default)
+      #   allow-sugar: false        # Disallow sugared logger (default)
+      #   allow-dynamic-msg: false  # Disallow dynamic messages (default)
+      #   msg-style: "lowercased"   # Enforce lowercased messages (default)
+      #   allow-raw-keys: false     # Disallow raw keys (default)
+      #   key-naming-case: "snake"  # Enforce snake_case keys (default)
+      #   allow-args-on-same-line: false  # Disallow args on same line (default)
+
 linters:
   enable:
     - zaplint
@@ -31,7 +54,7 @@ linters:
 
 ### Standalone usage
 
-Until then, you can use `zaplint` standalone:
+You can also use `zaplint` standalone:
 
 ```bash
 go install github.com/v1nvn/zaplint/cmd/zaplint@latest
@@ -45,23 +68,26 @@ Run `zaplint` on your Go packages with opinionated defaults enabled:
 zaplint ./...
 ```
 
-The default configuration enforces:
-
-* No global loggers (`-no-global`)
-* No sugared logger (`-no-sugar`)
-* Static messages (`-static-msg`)
-* Lowercased message style (`-msg-style=lowercased`)
-* Snake case key naming (`-key-naming-case=snake`)
-* Arguments on separate lines (`-args-on-sep-lines`)
-
-You can override these defaults by passing flags:
+The default configuration is opinionated and enforces strict logging practices. All checks are enabled by default. You can customize behavior by passing flags:
 
 ```bash
-# Disable specific checks
-zaplint -no-global=false -msg-style= ./...
+# Allow global loggers
+zaplint -allow-global ./...
 
-# Enable additional checks
-zaplint -no-raw-keys -forbidden-keys=reserved,internal ./...
+# Allow sugared logger
+zaplint -allow-sugar ./...
+
+# Allow dynamic messages
+zaplint -allow-dynamic-msg ./...
+
+# Allow raw keys
+zaplint -allow-raw-keys ./...
+
+# Disable message style check
+zaplint -msg-style= ./...
+
+# Add forbidden keys
+zaplint -forbidden-keys=password,secret ./...
 ```
 
 ### No global
