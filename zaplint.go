@@ -23,14 +23,14 @@ import (
 
 // Options are options for the zaplint analyzer.
 type Options struct {
-	AllowGlobal    bool     `json:"allow-global"`      // Allow using global loggers (zap.L() and zap.S()). Default: false (disallowed).
-	AllowSugar     bool     `json:"allow-sugar"`       // Allow using the sugared logger. Default: false (disallowed).
-	AllowDynamicMsg bool    `json:"allow-dynamic-msg"` // Allow dynamic log messages. Default: false (disallowed).
-	MsgStyle       string   `json:"msg-style"`         // Enforce message style ("lowercased" or "capitalized"). Default: "lowercased".
-	AllowRawKeys   bool     `json:"allow-raw-keys"`    // Allow using raw string keys instead of constants. Default: false (disallowed).
-	KeyNamingCase  string   `json:"key-naming-case"`   // Enforce key naming convention ("snake", "kebab", "camel", or "pascal"). Default: "snake".
-	ForbiddenKeys  []string `json:"forbidden-keys"`    // Enforce not using specific keys. Default: [].
-	AllowArgsOnSameLine bool `json:"allow-args-on-same-line"` // Allow putting arguments on the same line. Default: false (disallowed).
+	AllowGlobal         bool     `json:"allow-global"`            // Allow using global loggers (zap.L() and zap.S()). Default: false (disallowed).
+	AllowSugar          bool     `json:"allow-sugar"`             // Allow using the sugared logger. Default: false (disallowed).
+	AllowDynamicMsg     bool     `json:"allow-dynamic-msg"`       // Allow dynamic log messages. Default: false (disallowed).
+	MsgStyle            string   `json:"msg-style"`               // Enforce message style ("lowercased" or "capitalized"). Default: "lowercased".
+	AllowRawKeys        bool     `json:"allow-raw-keys"`          // Allow using raw string keys instead of constants. Default: false (disallowed).
+	KeyNamingCase       string   `json:"key-naming-case"`         // Enforce key naming convention ("snake", "kebab", "camel", or "pascal"). Default: "snake".
+	ForbiddenKeys       []string `json:"forbidden-keys"`          // Enforce not using specific keys. Default: [].
+	AllowArgsOnSameLine bool     `json:"allow-args-on-same-line"` // Allow putting arguments on the same line. Default: false (disallowed).
 }
 
 // New creates a new zaplint analyzer.
@@ -118,9 +118,34 @@ var zapFuncs = map[string]logFuncInfo{
 
 func run(pass *analysis.Pass, opts *Options) {
 	inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+
+	// First pass: collect all field constructor calls that are arguments to logger methods
+	processedFieldCalls := make(map[*ast.CallExpr]bool)
 	nodeFilter := []ast.Node{(*ast.CallExpr)(nil)}
 	inspector.Preorder(nodeFilter, func(node ast.Node) {
-		visit(pass, node.(*ast.CallExpr), opts)
+		call := node.(*ast.CallExpr)
+		fn := typeutil.StaticCallee(pass.TypesInfo, call)
+		if fn == nil {
+			return
+		}
+		cleanedFullName := cleanVendorPath(fn.FullName())
+		if _, ok := zapFuncs[cleanedFullName]; ok {
+			// This is a logger method - mark all field constructor arguments as processed
+			for _, arg := range call.Args {
+				if argCall, ok := arg.(*ast.CallExpr); ok {
+					if argFn := typeutil.StaticCallee(pass.TypesInfo, argCall); argFn != nil {
+						if argFn.Pkg() != nil && cleanVendorPath(argFn.Pkg().Path()) == "go.uber.org/zap" {
+							processedFieldCalls[argCall] = true
+						}
+					}
+				}
+			}
+		}
+	})
+
+	// Second pass: visit all calls
+	inspector.Preorder(nodeFilter, func(node ast.Node) {
+		visit(pass, node.(*ast.CallExpr), opts, processedFieldCalls)
 	})
 }
 
@@ -147,7 +172,7 @@ func cleanVendorPath(path string) string {
 	return path[:start] + path[i+len(vendor):]
 }
 
-func visit(pass *analysis.Pass, call *ast.CallExpr, opts *Options) {
+func visit(pass *analysis.Pass, call *ast.CallExpr, opts *Options, processedFieldCalls map[*ast.CallExpr]bool) {
 	fn := typeutil.StaticCallee(pass.TypesInfo, call)
 	if fn == nil {
 		return
@@ -157,6 +182,42 @@ func visit(pass *analysis.Pass, call *ast.CallExpr, opts *Options) {
 
 	info, ok := zapFuncs[cleanedFullName]
 	if !ok {
+		// Not a logger method - check if it's a standalone zap field constructor
+		// (e.g., zap.String("key", "value") not used as an argument to a logger method)
+		if !processedFieldCalls[call] && fn.Pkg() != nil && cleanVendorPath(fn.Pkg().Path()) == "go.uber.org/zap" {
+			// Check if it's a field constructor function that takes a key as first argument
+			if len(call.Args) > 0 {
+				// Common zap field constructors all take a key as the first argument
+				// and return a zapcore.Field type (or the Field type alias in zap package)
+				sig, ok := fn.Type().(*types.Signature)
+				if ok && sig.Results().Len() == 1 {
+					result := sig.Results().At(0)
+					// Get the result type and check if it's a Field type
+					resultType := result.Type()
+
+					// Handle both type aliases and named types
+					var obj *types.TypeName
+					if alias, ok := resultType.(*types.Alias); ok {
+						// For type aliases, get the object from the alias
+						obj = alias.Obj()
+					} else if named, ok := resultType.(*types.Named); ok {
+						// For named types, get the object directly
+						obj = named.Obj()
+					}
+
+					if obj != nil && obj.Pkg() != nil {
+						pkgPath := cleanVendorPath(obj.Pkg().Path())
+						// Check for both zapcore.Field and zap.Field (which is an alias)
+						if (pkgPath == "go.uber.org/zap/zapcore" || pkgPath == "go.uber.org/zap") && obj.Name() == "Field" {
+							// This is a standalone zap field constructor, check the key
+							checkAllKeys(pass, opts, func(yield func(ast.Expr) bool) {
+								yield(call.Args[0])
+							})
+						}
+					}
+				}
+			}
+		}
 		return
 	}
 
