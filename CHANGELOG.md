@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/v1nvn/zaplint/compare/v1.1.0...v1.1.1) (2025-10-11)
+
+
+### Bug Fixes
+
+* handle zap fields ([422b921](https://github.com/v1nvn/zaplint/commit/422b921c2cb4b2d888155f4a70bc7511985a1281))
+
 # [1.1.0](https://github.com/v1nvn/zaplint/compare/v1.0.2...v1.1.0) (2025-10-02)
 
 
